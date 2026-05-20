@@ -5,21 +5,81 @@ input_file: examples/deep.f
 ---
 type Id = lam a. a
 type K = lam a. lam b. a
-type Compose = lam (F : * -> *). lam (G : * -> *). lam a. F (G a)
-one : Id Int
-1
-dbl : Id Int -> Id Int
-42
+type Pair = lam a. lam b. forall r. (a -> b -> r) -> r
+mkPair : forall a. forall b. a -> b -> Pair a b
+fst : forall a. forall b. Pair a b -> a
+snd : forall a. forall b. Pair a b -> b
 type Abs = lam (F : * -> *). forall a. forall b. (F a -> F b) -> F (a -> b)
 type App = lam (F : * -> *). forall a. forall b. F (a -> b) -> F a -> F b
-type Exp = lam a. forall (F : * -> *). Abs F -> App F -> F a
+type TAbs = lam (F : * -> *). forall (B : * -> *). (forall a. F (B a)) -> F (forall a. B a)
+type TApp = lam (F : * -> *). forall (B : * -> *). forall a. F (forall c. B c) -> F (B a)
+type Exp = lam a. forall (F : * -> *). Abs F -> App F -> TAbs F -> TApp F -> F a
 qid : Exp (Int -> Int)
 qself : Exp ((Int -> Int) -> Int -> Int)
-absId : Abs Id
-appId : App Id
+qconst : Exp (Int -> Int -> Int)
+qapply : Exp ((Int -> Int) -> Int -> Int)
+qredex : Exp (Int -> Int)
+qpolyId : Exp (forall a. a -> a)
+qpolyConst : Exp (forall a. forall b. a -> b -> a)
+qtyRedex : Exp (Int -> Int)
+unquote : forall a. Exp a -> a
 7
 42
-absSize : Abs (K Int)
-appSize : App (K Int)
+7
+36
+42
+99
+77
+17
+size : forall a. Exp a -> Int
 1
 1
+2
+3
+3
+2
+4
+3
+isAbs : forall a. Exp a -> Bool
+true
+true
+true
+false
+false
+false
+type NF = Pair Bool Bool
+isNF : forall a. Exp a -> Bool
+true
+true
+true
+false
+true
+true
+false
+type CPS = lam a. forall r. (a -> r) -> r
+cps : forall a. Exp a -> CPS a
+<closure>
+99
+42
+77
+5
+8
+max : Int -> Int -> Int
+depth : forall a. Exp a -> Int
+1
+2
+3
+2
+2
+4
+3
+qcompose : Exp (forall a. forall b. forall c. (b -> c) -> (a -> b) -> a -> c)
+qtwice : Exp (forall a. (a -> a) -> a -> a)
+21
+10
+8
+5
+8
+5
+true
+true
