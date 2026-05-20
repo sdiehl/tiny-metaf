@@ -1,0 +1,20 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: examples/church.f
+---
+type Nat = forall a. (a -> a) -> a -> a
+zero : Nat
+one : Nat
+two : Nat
+succ : Nat -> Nat
+plus : Nat -> Nat -> Nat
+mul : Nat -> Nat -> Nat
+to_int : Nat -> Int
+three : Nat
+five : Nat
+six : Nat
+0
+5
+6
+9

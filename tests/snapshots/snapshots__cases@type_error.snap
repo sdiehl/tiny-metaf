@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/type_error.f
+---
+error: type error: type mismatch: expected Int, got Bool

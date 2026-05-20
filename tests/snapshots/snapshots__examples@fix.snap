@@ -1,0 +1,12 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: examples/fix.f
+---
+fact : Int -> Int
+fib : Int -> Int
+1
+120
+3628800
+55
+610

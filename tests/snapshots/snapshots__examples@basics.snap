@@ -1,0 +1,13 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: examples/basics.f
+---
+id : forall a. a -> a
+const : forall a. forall b. a -> b -> a
+compose : forall a. forall b. forall c. (b -> c) -> (a -> b) -> a -> c
+inc : Int -> Int
+dbl : Int -> Int
+42
+7
+21

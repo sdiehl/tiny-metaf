@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/polymorphic.f
+---
+id : forall a. a -> a
+apply : forall a. forall b. (a -> b) -> a -> b
+5
+true
+49

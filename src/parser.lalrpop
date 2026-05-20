@@ -1,0 +1,162 @@
+use std::rc::Rc;
+
+use crate::lexer::{LexicalError, Token};
+use crate::syntax::{fold_lams, fold_tlams, name, BinOp, Decl, Tm, Ty};
+
+grammar;
+
+pub Program: Vec<Decl> = {
+    <ds:Decl*> => ds,
+};
+
+Decl: Decl = {
+    "type" <n:"IDENT"> "=" <t:Type> ";" => Decl::TypeAlias(name(&n), Rc::new(t)),
+    "let" <n:"IDENT"> ":" <ty:Type> "=" <body:Expr> ";" => {
+        Decl::Let(name(&n), Rc::new(ty), Rc::new(body))
+    },
+    "eval" <e:Expr> ";" => Decl::Eval(Rc::new(e)),
+};
+
+pub Expr: Tm = {
+    "let" <n:"IDENT"> <ann:LetAnn?> "=" <v:Expr> "in" <b:Expr> => {
+        Tm::Let(name(&n), ann.map(Rc::new), Rc::new(v), Rc::new(b))
+    },
+    "if" <c:Expr> "then" <t:Expr> "else" <e:Expr> => {
+        Tm::If(Rc::new(c), Rc::new(t), Rc::new(e))
+    },
+    "\\" <ps:LamParams> "." <body:Expr> => fold_lams(ps, body),
+    "/\\" <ps:TyParams> "." <body:Expr> => fold_tlams(ps, body),
+    "fix" <n:"IDENT"> ":" <t:Type> "." <body:Expr> => {
+        Tm::Fix(name(&n), Rc::new(t), Rc::new(body))
+    },
+    ExprAnn,
+};
+
+LetAnn: Ty = {
+    ":" <t:Type> => t,
+};
+
+LamParams: Vec<(crate::syntax::Name, Rc<Ty>)> = {
+    <p:LamParam> => vec![p],
+    <p:LamParam> <rest:LamParams> => {
+        let mut v = vec![p];
+        v.extend(rest);
+        v
+    },
+};
+
+LamParam: (crate::syntax::Name, Rc<Ty>) = {
+    "(" <n:"IDENT"> ":" <t:Type> ")" => (name(&n), Rc::new(t)),
+    <n:"IDENT"> ":" <t:AtomType> => (name(&n), Rc::new(t)),
+};
+
+TyParams: Vec<crate::syntax::Name> = {
+    <n:"IDENT"> => vec![name(&n)],
+    <n:"IDENT"> <rest:TyParams> => {
+        let mut v = vec![name(&n)];
+        v.extend(rest);
+        v
+    },
+};
+
+ExprAnn: Tm = {
+    ExprOr,
+    <e:ExprOr> ":" <t:Type> => Tm::Ann(Rc::new(e), Rc::new(t)),
+};
+
+ExprOr: Tm = {
+    ExprAnd,
+    <l:ExprOr> "||" <r:ExprAnd> => Tm::Bin(BinOp::Or, Rc::new(l), Rc::new(r)),
+};
+
+ExprAnd: Tm = {
+    ExprCmp,
+    <l:ExprAnd> "&&" <r:ExprCmp> => Tm::Bin(BinOp::And, Rc::new(l), Rc::new(r)),
+};
+
+ExprCmp: Tm = {
+    ExprAdd,
+    <l:ExprAdd> "==" <r:ExprAdd> => Tm::Bin(BinOp::Eq, Rc::new(l), Rc::new(r)),
+    <l:ExprAdd> "<" <r:ExprAdd> => Tm::Bin(BinOp::Lt, Rc::new(l), Rc::new(r)),
+};
+
+ExprAdd: Tm = {
+    ExprMul,
+    <l:ExprAdd> "+" <r:ExprMul> => Tm::Bin(BinOp::Add, Rc::new(l), Rc::new(r)),
+    <l:ExprAdd> "-" <r:ExprMul> => Tm::Bin(BinOp::Sub, Rc::new(l), Rc::new(r)),
+};
+
+ExprMul: Tm = {
+    ExprApp,
+    <l:ExprMul> "*" <r:ExprApp> => Tm::Bin(BinOp::Mul, Rc::new(l), Rc::new(r)),
+};
+
+ExprApp: Tm = {
+    Atom,
+    <f:ExprApp> <x:Atom> => Tm::App(Rc::new(f), Rc::new(x)),
+    <f:ExprApp> "[" <t:Type> "]" => Tm::TApp(Rc::new(f), Rc::new(t)),
+};
+
+Atom: Tm = {
+    <n:"NUM"> => Tm::Int(n),
+    "true" => Tm::Bool(true),
+    "false" => Tm::Bool(false),
+    <s:"IDENT"> => Tm::Var(name(&s)),
+    "(" <e:Expr> ")" => e,
+};
+
+pub Type: Ty = {
+    "forall" <ns:TyParams> "." <t:Type> => {
+        ns.into_iter().rev().fold(t, |acc, n| Ty::Forall(n, Rc::new(acc)))
+    },
+    <a:AtomType> "->" <b:Type> => Ty::arr(a, b),
+    AtomType,
+};
+
+AtomType: Ty = {
+    "Int" => Ty::Int,
+    "Bool" => Ty::Bool,
+    <s:"IDENT"> => Ty::Var(name(&s)),
+    "(" <t:Type> ")" => t,
+};
+
+extern {
+    type Location = usize;
+    type Error = LexicalError;
+
+    enum Token {
+        "let" => Token::Let,
+        "in" => Token::In,
+        "if" => Token::If,
+        "then" => Token::Then,
+        "else" => Token::Else,
+        "true" => Token::True,
+        "false" => Token::False,
+        "forall" => Token::Forall,
+        "Int" => Token::IntTy,
+        "Bool" => Token::BoolTy,
+        "type" => Token::Type,
+        "eval" => Token::Eval,
+        "fix" => Token::Fix,
+        "->" => Token::Arrow,
+        "=" => Token::Eq,
+        "==" => Token::EqEq,
+        "<" => Token::Lt,
+        "&&" => Token::AndAnd,
+        "||" => Token::PipePipe,
+        "+" => Token::Plus,
+        "-" => Token::Minus,
+        "*" => Token::Star,
+        ":" => Token::Colon,
+        ";" => Token::Semi,
+        "." => Token::Dot,
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "[" => Token::LBracket,
+        "]" => Token::RBracket,
+        "\\" => Token::Lambda,
+        "/\\" => Token::BigLambda,
+        "NUM" => Token::Num(<i64>),
+        "IDENT" => Token::Ident(<String>),
+    }
+}

@@ -1,0 +1,17 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: examples/self.f
+---
+type Expr = forall r. (Int -> r) -> (r -> r -> r) -> (r -> r -> r) -> (r -> r -> r -> r) -> r
+cConst : Int -> Expr
+cAdd : Expr -> Expr -> Expr
+cMul : Expr -> Expr -> Expr
+cIf0 : Expr -> Expr -> Expr -> Expr
+interp : Expr -> Int
+size : Expr -> Int
+depth : Expr -> Int
+prog : Expr
+42
+10
+4
