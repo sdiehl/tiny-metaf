@@ -1,0 +1,23 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: examples/shallow.f
+---
+type Iota = forall i. i -> i
+unquote : forall a. (Iota -> a) -> a
+id : forall a. a -> a
+const : forall a. a -> forall b. b -> a
+foo : forall b. b -> forall a. a -> a
+qid : Iota -> forall a. a -> a
+qconst : Iota -> forall a. a -> forall b. b -> a
+qfoo : Iota -> forall b. b -> forall a. a -> a
+42
+two : Int
+qtwo : Iota -> Int
+2
+2
+plus : Int -> Int -> Int
+seven : Int
+qseven : Iota -> Int
+7
+7

@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/bad_tapp.f
+---
+error: type error: expected forall, got Int -> Int

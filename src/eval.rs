@@ -56,7 +56,7 @@ pub fn eval(env: &Env, tm: &Tm) -> Result<Value> {
         Tm::Bool(b) => Ok(Value::Bool(*b)),
         Tm::Var(x) => lookup(env, x),
         Tm::Lam(x, _, body) => Ok(Value::Closure(env.clone(), x.clone(), body.clone())),
-        Tm::TLam(_, body) => Ok(Value::TClosure(env.clone(), body.clone())),
+        Tm::TLam(_, _, body) => Ok(Value::TClosure(env.clone(), body.clone())),
         Tm::App(f, x) => {
             let fv = eval(env, f)?;
             let xv = eval(env, x)?;

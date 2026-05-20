@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/unbound_var.f
+---
+error: type error: unbound variable: missing

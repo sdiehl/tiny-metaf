@@ -1,0 +1,14 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/shallow.f
+---
+type Iota = forall i. i -> i
+unquote : forall a. (Iota -> a) -> a
+two : Int
+qtwo : Iota -> Int
+2
+2
+plus : Int -> Int -> Int
+qseven : Iota -> Int
+7

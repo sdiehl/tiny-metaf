@@ -1,0 +1,25 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: examples/deep.f
+---
+type Id = lam a. a
+type K = lam a. lam b. a
+type Compose = lam (F : * -> *). lam (G : * -> *). lam a. F (G a)
+one : Id Int
+1
+dbl : Id Int -> Id Int
+42
+type Abs = lam (F : * -> *). forall a. forall b. (F a -> F b) -> F (a -> b)
+type App = lam (F : * -> *). forall a. forall b. F (a -> b) -> F a -> F b
+type Exp = lam a. forall (F : * -> *). Abs F -> App F -> F a
+qid : Exp (Int -> Int)
+qself : Exp ((Int -> Int) -> Int -> Int)
+absId : Abs Id
+appId : App Id
+7
+42
+absSize : Abs (K Int)
+appSize : App (K Int)
+1
+1

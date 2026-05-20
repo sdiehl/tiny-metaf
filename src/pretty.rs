@@ -1,7 +1,32 @@
 use std::fmt::Write;
 
 use crate::eval::Value;
-use crate::syntax::{BinOp, Tm, Ty};
+use crate::syntax::{BinOp, Kind, Tm, Ty};
+
+#[must_use]
+pub fn kind(k: &Kind) -> String {
+    let mut s = String::new();
+    write_kind(&mut s, k, 0);
+    s
+}
+
+fn write_kind(out: &mut String, k: &Kind, prec: u8) {
+    match k {
+        Kind::Star => out.push('*'),
+        Kind::Arr(a, b) => {
+            let needs = prec > 0;
+            if needs {
+                out.push('(');
+            }
+            write_kind(out, a, 1);
+            out.push_str(" -> ");
+            write_kind(out, b, 0);
+            if needs {
+                out.push(')');
+            }
+        }
+    }
+}
 
 #[must_use]
 pub fn ty(t: &Ty) -> String {
@@ -27,12 +52,43 @@ fn write_ty(out: &mut String, t: &Ty, prec: u8) {
                 out.push(')');
             }
         }
-        Ty::Forall(n, body) => {
+        Ty::App(f, x) => {
+            let needs = prec > 1;
+            if needs {
+                out.push('(');
+            }
+            write_ty(out, f, 1);
+            out.push(' ');
+            write_ty(out, x, 2);
+            if needs {
+                out.push(')');
+            }
+        }
+        Ty::Forall(n, k, body) => {
             let needs = prec > 0;
             if needs {
                 out.push('(');
             }
-            let _ = write!(out, "forall {n}. ");
+            if matches!(**k, Kind::Star) {
+                let _ = write!(out, "forall {n}. ");
+            } else {
+                let _ = write!(out, "forall ({n} : {}). ", kind(k));
+            }
+            write_ty(out, body, 0);
+            if needs {
+                out.push(')');
+            }
+        }
+        Ty::Lam(n, k, body) => {
+            let needs = prec > 0;
+            if needs {
+                out.push('(');
+            }
+            if matches!(**k, Kind::Star) {
+                let _ = write!(out, "lam {n}. ");
+            } else {
+                let _ = write!(out, "lam ({n} : {}). ", kind(k));
+            }
             write_ty(out, body, 0);
             if needs {
                 out.push(')');
@@ -80,9 +136,13 @@ fn write_tm(out: &mut String, t: &Tm, prec: u8) {
                 write_tm(out, x, 10);
             });
         }
-        Tm::TLam(a, body) => {
+        Tm::TLam(a, k, body) => {
             paren(out, prec, 0, |out| {
-                let _ = write!(out, "/\\{a}. ");
+                if matches!(**k, Kind::Star) {
+                    let _ = write!(out, "/\\{a}. ");
+                } else {
+                    let _ = write!(out, "/\\({a} : {}). ", kind(k));
+                }
                 write_tm(out, body, 0);
             });
         }

@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/unbound_tyvar.f
+---
+error: type error: unbound type variable: Missing

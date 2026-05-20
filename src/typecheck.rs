@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::errors::{Error, Result};
-use crate::syntax::{name, BinOp, Decl, Name, Tm, Ty};
+use crate::pretty;
+use crate::syntax::{name, BinOp, Decl, Kind, Name, Tm, Ty};
 
 #[derive(Debug, Clone, Default)]
 pub struct Env {
     tys: HashMap<Name, Rc<Ty>>,
-    tyvars: Vec<Name>,
+    tyvars: Vec<(Name, Rc<Kind>)>,
     aliases: HashMap<Name, Rc<Ty>>,
 }
 
@@ -21,12 +22,8 @@ impl Env {
         self.tys.insert(n.clone(), t);
     }
 
-    pub fn bind_tyvar(&mut self, n: &Name) {
-        self.tyvars.push(n.clone());
-    }
-
-    pub fn pop_tyvar(&mut self) {
-        self.tyvars.pop();
+    pub fn bind_tyvar(&mut self, n: &Name, k: Rc<Kind>) {
+        self.tyvars.push((n.clone(), k));
     }
 
     pub fn bind_alias(&mut self, n: &Name, t: Rc<Ty>) {
@@ -37,8 +34,12 @@ impl Env {
         self.tys.get(n).cloned()
     }
 
-    fn is_tyvar(&self, n: &Name) -> bool {
-        self.tyvars.iter().any(|v| v == n)
+    fn lookup_kind(&self, n: &Name) -> Option<Rc<Kind>> {
+        self.tyvars
+            .iter()
+            .rev()
+            .find(|(m, _)| m == n)
+            .map(|(_, k)| k.clone())
     }
 
     fn lookup_alias(&self, n: &Name) -> Option<Rc<Ty>> {
@@ -46,38 +47,137 @@ impl Env {
     }
 }
 
-#[must_use]
-pub fn resolve(env: &Env, t: &Ty) -> Ty {
-    match t {
-        Ty::Var(n) => {
-            if env.is_tyvar(n) {
-                Ty::Var(n.clone())
-            } else if let Some(a) = env.lookup_alias(n) {
-                resolve(env, &a)
-            } else {
-                Ty::Var(n.clone())
+fn free_vars(t: &Ty) -> HashSet<Name> {
+    fn go(t: &Ty, acc: &mut HashSet<Name>, bound: &mut Vec<Name>) {
+        match t {
+            Ty::Int | Ty::Bool => {}
+            Ty::Var(n) => {
+                if !bound.iter().any(|b| b == n) {
+                    acc.insert(n.clone());
+                }
+            }
+            Ty::Arr(a, b) | Ty::App(a, b) => {
+                go(a, acc, bound);
+                go(b, acc, bound);
+            }
+            Ty::Forall(x, _, body) | Ty::Lam(x, _, body) => {
+                bound.push(x.clone());
+                go(body, acc, bound);
+                bound.pop();
             }
         }
-        Ty::Arr(a, b) => Ty::Arr(Rc::new(resolve(env, a)), Rc::new(resolve(env, b))),
-        Ty::Forall(x, body) => Ty::Forall(x.clone(), Rc::new(resolve(env, body))),
-        Ty::Int => Ty::Int,
-        Ty::Bool => Ty::Bool,
     }
+    let mut acc = HashSet::new();
+    let mut bound = Vec::new();
+    go(t, &mut acc, &mut bound);
+    acc
 }
 
 fn subst(target: &Name, with: &Ty, in_: &Ty) -> Ty {
+    let fv_with = free_vars(with);
+    subst_inner(target, with, &fv_with, in_)
+}
+
+fn subst_inner(target: &Name, with: &Ty, fv_with: &HashSet<Name>, in_: &Ty) -> Ty {
     match in_ {
+        Ty::Int => Ty::Int,
+        Ty::Bool => Ty::Bool,
         Ty::Var(n) if n == target => with.clone(),
         Ty::Var(n) => Ty::Var(n.clone()),
         Ty::Arr(a, b) => Ty::Arr(
-            Rc::new(subst(target, with, a)),
-            Rc::new(subst(target, with, b)),
+            Rc::new(subst_inner(target, with, fv_with, a)),
+            Rc::new(subst_inner(target, with, fv_with, b)),
         ),
-        Ty::Forall(x, _) if x == target => in_.clone(),
-        Ty::Forall(x, body) => Ty::Forall(x.clone(), Rc::new(subst(target, with, body))),
+        Ty::App(a, b) => Ty::App(
+            Rc::new(subst_inner(target, with, fv_with, a)),
+            Rc::new(subst_inner(target, with, fv_with, b)),
+        ),
+        Ty::Forall(x, k, body) => {
+            if x == target {
+                in_.clone()
+            } else if fv_with.contains(x) {
+                let (x_new, body_new) = rename_binder(x, body, fv_with, target);
+                let body_subbed = subst_inner(target, with, fv_with, &body_new);
+                Ty::Forall(x_new, k.clone(), Rc::new(body_subbed))
+            } else {
+                Ty::Forall(
+                    x.clone(),
+                    k.clone(),
+                    Rc::new(subst_inner(target, with, fv_with, body)),
+                )
+            }
+        }
+        Ty::Lam(x, k, body) => {
+            if x == target {
+                in_.clone()
+            } else if fv_with.contains(x) {
+                let (x_new, body_new) = rename_binder(x, body, fv_with, target);
+                let body_subbed = subst_inner(target, with, fv_with, &body_new);
+                Ty::Lam(x_new, k.clone(), Rc::new(body_subbed))
+            } else {
+                Ty::Lam(
+                    x.clone(),
+                    k.clone(),
+                    Rc::new(subst_inner(target, with, fv_with, body)),
+                )
+            }
+        }
+    }
+}
+
+fn rename_binder(x: &Name, body: &Ty, fv_with: &HashSet<Name>, target: &Name) -> (Name, Ty) {
+    let mut used: Vec<Name> = fv_with.iter().cloned().collect();
+    used.extend(free_vars(body));
+    used.push(target.clone());
+    let x_new = fresh(x, &used);
+    let body_new = subst(x, &Ty::Var(x_new.clone()), body);
+    (x_new, body_new)
+}
+
+fn whnf(env: &Env, t: &Ty) -> Ty {
+    match t {
+        Ty::Var(n) => {
+            if env.lookup_kind(n).is_some() {
+                t.clone()
+            } else if let Some(a) = env.lookup_alias(n) {
+                whnf(env, &a)
+            } else {
+                t.clone()
+            }
+        }
+        Ty::App(f, x) => match whnf(env, f) {
+            Ty::Lam(a, _, body) => {
+                let red = subst(&a, x, &body);
+                whnf(env, &red)
+            }
+            other => Ty::App(Rc::new(other), x.clone()),
+        },
+        _ => t.clone(),
+    }
+}
+
+fn nf(env: &Env, t: &Ty) -> Ty {
+    match whnf(env, t) {
         Ty::Int => Ty::Int,
         Ty::Bool => Ty::Bool,
+        Ty::Var(n) => Ty::Var(n),
+        Ty::Arr(a, b) => Ty::Arr(Rc::new(nf(env, &a)), Rc::new(nf(env, &b))),
+        Ty::Forall(x, k, body) => {
+            let mut env2 = env.clone();
+            env2.bind_tyvar(&x, k.clone());
+            Ty::Forall(x, k, Rc::new(nf(&env2, &body)))
+        }
+        Ty::Lam(x, k, body) => {
+            let mut env2 = env.clone();
+            env2.bind_tyvar(&x, k.clone());
+            Ty::Lam(x, k, Rc::new(nf(&env2, &body)))
+        }
+        Ty::App(f, x) => Ty::App(Rc::new(nf(env, &f)), Rc::new(nf(env, &x))),
     }
+}
+
+fn types_equal(env: &Env, a: &Ty, b: &Ty) -> bool {
+    alpha_eq(&nf(env, a), &nf(env, b))
 }
 
 fn alpha_eq(left: &Ty, right: &Ty) -> bool {
@@ -93,8 +193,14 @@ fn alpha_eq(left: &Ty, right: &Ty) -> bool {
                     _ => false,
                 }
             }
-            (Ty::Arr(la, lb), Ty::Arr(ra, rb)) => go(la, ra, ls, rs) && go(lb, rb, ls, rs),
-            (Ty::Forall(lv, lb), Ty::Forall(rv, rb)) => {
+            (Ty::Arr(la, lb), Ty::Arr(ra, rb)) | (Ty::App(la, lb), Ty::App(ra, rb)) => {
+                go(la, ra, ls, rs) && go(lb, rb, ls, rs)
+            }
+            (Ty::Forall(lv, lk, lb), Ty::Forall(rv, rk, rb))
+            | (Ty::Lam(lv, lk, lb), Ty::Lam(rv, rk, rb)) => {
+                if lk != rk {
+                    return false;
+                }
                 ls.push(lv.clone());
                 rs.push(rv.clone());
                 let ok = go(lb, rb, ls, rs);
@@ -108,39 +214,76 @@ fn alpha_eq(left: &Ty, right: &Ty) -> bool {
     go(left, right, &mut Vec::new(), &mut Vec::new())
 }
 
-fn well_formed(env: &Env, t: &Ty) -> Result<()> {
-    match t {
-        Ty::Int | Ty::Bool => Ok(()),
-        Ty::Var(n) => {
-            if env.is_tyvar(n) || env.lookup_alias(n).is_some() {
-                Ok(())
-            } else {
-                Err(Error::Type(format!("unbound type variable: {n}")))
-            }
-        }
+fn kind_of(env: &Env, ty: &Ty) -> Result<Kind> {
+    match ty {
+        Ty::Int | Ty::Bool => Ok(Kind::Star),
+        Ty::Var(n) => env.lookup_kind(n).map_or_else(
+            || {
+                env.lookup_alias(n).map_or_else(
+                    || Err(Error::Type(format!("unbound type variable: {n}"))),
+                    |a| kind_of(env, &a),
+                )
+            },
+            |k| Ok((*k).clone()),
+        ),
         Ty::Arr(a, b) => {
-            well_formed(env, a)?;
-            well_formed(env, b)
+            check_kind(env, a, &Kind::Star)?;
+            check_kind(env, b, &Kind::Star)?;
+            Ok(Kind::Star)
         }
-        Ty::Forall(x, body) => {
+        Ty::Forall(x, k, body) => {
             let mut env2 = env.clone();
-            env2.bind_tyvar(x);
-            well_formed(&env2, body)
+            env2.bind_tyvar(x, k.clone());
+            check_kind(&env2, body, &Kind::Star)?;
+            Ok(Kind::Star)
+        }
+        Ty::Lam(x, k, body) => {
+            let mut env2 = env.clone();
+            env2.bind_tyvar(x, k.clone());
+            let body_k = kind_of(&env2, body)?;
+            Ok(Kind::Arr(k.clone(), Rc::new(body_k)))
+        }
+        Ty::App(f, x) => {
+            let fk = kind_of(env, f)?;
+            if let Kind::Arr(dom, cod) = fk {
+                check_kind(env, x, &dom)?;
+                Ok((*cod).clone())
+            } else {
+                Err(Error::Type(format!(
+                    "expected type-level function kind, got {}",
+                    pretty::kind(&fk)
+                )))
+            }
         }
     }
 }
 
+fn check_kind(env: &Env, t: &Ty, expected: &Kind) -> Result<()> {
+    let got = kind_of(env, t)?;
+    if got == *expected {
+        Ok(())
+    } else {
+        Err(Error::Type(format!(
+            "kind mismatch: expected {}, got {}",
+            pretty::kind(expected),
+            pretty::kind(&got)
+        )))
+    }
+}
+
+fn well_formed(env: &Env, t: &Ty) -> Result<()> {
+    check_kind(env, t, &Kind::Star)
+}
+
 pub fn check(env: &mut Env, tm: &Tm, expected: &Ty) -> Result<()> {
     let got = infer(env, tm)?;
-    let g = resolve(env, &got);
-    let e = resolve(env, expected);
-    if alpha_eq(&g, &e) {
+    if types_equal(env, &got, expected) {
         Ok(())
     } else {
         Err(Error::Type(format!(
             "type mismatch: expected {}, got {}",
-            crate::pretty::ty(&e),
-            crate::pretty::ty(&g)
+            pretty::ty(&nf(env, expected)),
+            pretty::ty(&nf(env, &got))
         )))
     }
 }
@@ -162,7 +305,7 @@ pub fn infer(env: &mut Env, tm: &Tm) -> Result<Ty> {
         }
         Tm::App(f, x) => {
             let ft0 = infer(env, f)?;
-            let ft = resolve(env, &ft0);
+            let ft = whnf(env, &ft0);
             match ft {
                 Ty::Arr(a, b) => {
                     check(env, x, &a)?;
@@ -170,25 +313,27 @@ pub fn infer(env: &mut Env, tm: &Tm) -> Result<Ty> {
                 }
                 other => Err(Error::Type(format!(
                     "expected function, got {}",
-                    crate::pretty::ty(&other)
+                    pretty::ty(&other)
                 ))),
             }
         }
-        Tm::TLam(a, body) => {
+        Tm::TLam(a, k, body) => {
             let mut env2 = env.clone();
-            env2.bind_tyvar(a);
+            env2.bind_tyvar(a, k.clone());
             let bt = infer(&mut env2, body)?;
-            Ok(Ty::Forall(a.clone(), Rc::new(bt)))
+            Ok(Ty::Forall(a.clone(), k.clone(), Rc::new(bt)))
         }
         Tm::TApp(f, t) => {
-            well_formed(env, t)?;
             let ft0 = infer(env, f)?;
-            let ft = resolve(env, &ft0);
+            let ft = whnf(env, &ft0);
             match ft {
-                Ty::Forall(a, body) => Ok(subst(&a, t, &body)),
+                Ty::Forall(a, k, body) => {
+                    check_kind(env, t, &k)?;
+                    Ok(subst(&a, t, &body))
+                }
                 other => Err(Error::Type(format!(
                     "expected forall, got {}",
-                    crate::pretty::ty(&other)
+                    pretty::ty(&other)
                 ))),
             }
         }
@@ -245,7 +390,7 @@ pub fn infer(env: &mut Env, tm: &Tm) -> Result<Ty> {
 pub fn check_decl(env: &mut Env, d: &Decl) -> Result<()> {
     match d {
         Decl::TypeAlias(n, t) => {
-            well_formed(env, t)?;
+            kind_of(env, t)?;
             env.bind_alias(n, t.clone());
             Ok(())
         }

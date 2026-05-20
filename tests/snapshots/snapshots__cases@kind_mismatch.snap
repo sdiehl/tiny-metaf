@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/kind_mismatch.f
+---
+error: type error: kind mismatch: expected *, got * -> *

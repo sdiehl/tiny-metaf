@@ -5,7 +5,7 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
 use crate::driver::Session;
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use crate::parse;
 use crate::pretty;
 use crate::syntax::ReplItem;
@@ -27,7 +27,7 @@ declarations end in ';'. examples:
 
 pub fn run() -> Result<()> {
     let mut s = Session::new();
-    let mut rl = DefaultEditor::new().map_err(|e| crate::errors::Error::Runtime(e.to_string()))?;
+    let mut rl = DefaultEditor::new().map_err(|e| Error::Runtime(e.to_string()))?;
     println!("{BANNER}");
     loop {
         match rl.readline("fself> ") {
@@ -49,7 +49,7 @@ pub fn run() -> Result<()> {
                 }
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => return Ok(()),
-            Err(e) => return Err(crate::errors::Error::Runtime(e.to_string())),
+            Err(e) => return Err(Error::Runtime(e.to_string())),
         }
     }
 }
@@ -70,9 +70,7 @@ fn handle_cmd(s: &mut Session, cmd: &str) -> Result<()> {
             Ok(())
         }
         "l" | "load" => load_file(s, Path::new(tail)),
-        other => Err(crate::errors::Error::Runtime(format!(
-            "unknown command: :{other}"
-        ))),
+        other => Err(Error::Runtime(format!("unknown command: :{other}"))),
     }
 }
 
@@ -93,8 +91,8 @@ fn handle_input(s: &mut Session, src: &str) -> Result<()> {
 }
 
 pub fn load_file(s: &mut Session, path: &Path) -> Result<()> {
-    let src = fs::read_to_string(path)
-        .map_err(|e| crate::errors::Error::Runtime(format!("{}: {e}", path.display())))?;
+    let src =
+        fs::read_to_string(path).map_err(|e| Error::Runtime(format!("{}: {e}", path.display())))?;
     let prog = parse::parse_program(&src)?;
     for line in s.process_program(&prog)? {
         println!("{line}");

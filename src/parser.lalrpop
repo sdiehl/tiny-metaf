@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
 use crate::lexer::{LexicalError, Token};
-use crate::syntax::{fold_lams, fold_tlams, name, BinOp, Decl, Tm, Ty};
+use crate::syntax::{
+    fold_foralls, fold_lams, fold_tlams, fold_tylams, name, BinOp, Decl, Kind, Tm, Ty,
+};
 
 grammar;
 
@@ -50,13 +52,28 @@ LamParam: (crate::syntax::Name, Rc<Ty>) = {
     <n:"IDENT"> ":" <t:AtomType> => (name(&n), Rc::new(t)),
 };
 
-TyParams: Vec<crate::syntax::Name> = {
-    <n:"IDENT"> => vec![name(&n)],
-    <n:"IDENT"> <rest:TyParams> => {
-        let mut v = vec![name(&n)];
+TyParams: Vec<(crate::syntax::Name, Rc<Kind>)> = {
+    <p:TyParam> => vec![p],
+    <p:TyParam> <rest:TyParams> => {
+        let mut v = vec![p];
         v.extend(rest);
         v
     },
+};
+
+TyParam: (crate::syntax::Name, Rc<Kind>) = {
+    <n:"IDENT"> => (name(&n), Rc::new(Kind::Star)),
+    "(" <n:"IDENT"> ":" <k:Kind> ")" => (name(&n), Rc::new(k)),
+};
+
+pub Kind: Kind = {
+    <a:AtomKind> "->" <b:Kind> => Kind::arr(a, b),
+    AtomKind,
+};
+
+AtomKind: Kind = {
+    "*" => Kind::Star,
+    "(" <k:Kind> ")" => k,
 };
 
 ExprAnn: Tm = {
@@ -106,11 +123,15 @@ Atom: Tm = {
 };
 
 pub Type: Ty = {
-    "forall" <ns:TyParams> "." <t:Type> => {
-        ns.into_iter().rev().fold(t, |acc, n| Ty::Forall(n, Rc::new(acc)))
-    },
-    <a:AtomType> "->" <b:Type> => Ty::arr(a, b),
+    "forall" <ps:TyParams> "." <t:Type> => fold_foralls(ps, t),
+    "lam" <ps:TyParams> "." <t:Type> => fold_tylams(ps, t),
+    <a:AppType> "->" <b:Type> => Ty::arr(a, b),
+    AppType,
+};
+
+AppType: Ty = {
     AtomType,
+    <f:AppType> <x:AtomType> => Ty::App(Rc::new(f), Rc::new(x)),
 };
 
 AtomType: Ty = {
@@ -138,6 +159,7 @@ extern {
         "type" => Token::Type,
         "eval" => Token::Eval,
         "fix" => Token::Fix,
+        "lam" => Token::Lam,
         "->" => Token::Arrow,
         "=" => Token::Eq,
         "==" => Token::EqEq,
