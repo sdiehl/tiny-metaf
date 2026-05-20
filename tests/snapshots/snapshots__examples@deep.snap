@@ -3,83 +3,19 @@ source: tests/snapshots.rs
 expression: out
 input_file: examples/deep.f
 ---
+type Op = lam (F : * -> *). lam (a : (* -> *) -> *). F (a F)
+type Strip = lam (F : * -> *). lam a. forall b. (forall c. F c -> b) -> a -> b
+type Abs = lam (F : * -> *). forall a. forall b. (F a -> F b) -> F (F a -> F b)
+type App = lam (F : * -> *). forall a. forall b. F (F a -> F b) -> F a -> F b
+type TAbs = lam (F : * -> *). forall a. Strip F a -> a -> F a
+type TApp = lam (F : * -> *). forall a. F a -> forall b. (a -> F b) -> F b
+type Exp = lam (a : (* -> *) -> *). forall (F : * -> *). Abs F -> App F -> TAbs F -> TApp F -> Op F a
+type Bot = forall a. a
+type QIdPre = lam (F : * -> *). forall a. F (F a -> F a)
+qid : Exp QIdPre
+type QMIdPre = lam (F : * -> *). forall (M : * -> *). F (forall a. F (F (M a) -> F (M a)))
+qmid : Exp QMIdPre
 type Id = lam a. a
-type K = lam a. lam b. a
-type Pair = lam a. lam b. forall r. (a -> b -> r) -> r
-mkPair : forall a. forall b. a -> b -> Pair a b
-fst : forall a. forall b. Pair a b -> a
-snd : forall a. forall b. Pair a b -> b
-type Abs = lam (F : * -> *). forall a. forall b. (F a -> F b) -> F (a -> b)
-type App = lam (F : * -> *). forall a. forall b. F (a -> b) -> F a -> F b
-type TAbs = lam (F : * -> *). forall (B : * -> *). (forall a. F (B a)) -> F (forall a. B a)
-type TApp = lam (F : * -> *). forall (B : * -> *). forall a. F (forall c. B c) -> F (B a)
-type Exp = lam a. forall (F : * -> *). Abs F -> App F -> TAbs F -> TApp F -> F a
-qid : Exp (Int -> Int)
-qself : Exp ((Int -> Int) -> Int -> Int)
-qconst : Exp (Int -> Int -> Int)
-qapply : Exp ((Int -> Int) -> Int -> Int)
-qredex : Exp (Int -> Int)
-qpolyId : Exp (forall a. a -> a)
-qpolyConst : Exp (forall a. forall b. a -> b -> a)
-qtyRedex : Exp (Int -> Int)
-unquote : forall a. Exp a -> a
-7
-42
-7
-36
+unquote : forall (a : (* -> *) -> *). Exp a -> Op Id a
 42
 99
-77
-17
-size : forall a. Exp a -> Int
-1
-1
-2
-3
-3
-2
-4
-3
-isAbs : forall a. Exp a -> Bool
-true
-true
-true
-false
-false
-false
-type NF = Pair Bool Bool
-isNF : forall a. Exp a -> Bool
-true
-true
-true
-false
-true
-true
-false
-type CPS = lam a. forall r. (a -> r) -> r
-cps : forall a. Exp a -> CPS a
-<closure>
-99
-42
-77
-5
-8
-max : Int -> Int -> Int
-depth : forall a. Exp a -> Int
-1
-2
-3
-2
-2
-4
-3
-qcompose : Exp (forall a. forall b. forall c. (b -> c) -> (a -> b) -> a -> c)
-qtwice : Exp (forall a. (a -> a) -> a -> a)
-21
-10
-8
-5
-8
-5
-true
-true
