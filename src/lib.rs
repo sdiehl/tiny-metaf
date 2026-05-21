@@ -6,6 +6,7 @@ pub mod eval;
 pub mod lexer;
 pub mod parse;
 pub mod pretty;
+pub mod quote;
 pub mod repl;
 pub mod syntax;
 pub mod typecheck;

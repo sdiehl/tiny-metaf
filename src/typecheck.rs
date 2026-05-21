@@ -73,7 +73,8 @@ fn free_vars(t: &Ty) -> HashSet<Name> {
     acc
 }
 
-fn subst(target: &Name, with: &Ty, in_: &Ty) -> Ty {
+#[must_use]
+pub fn subst(target: &Name, with: &Ty, in_: &Ty) -> Ty {
     let fv_with = free_vars(with);
     subst_inner(target, with, &fv_with, in_)
 }
