@@ -21,11 +21,15 @@ impl Session {
     pub fn process_decl(&mut self, d: &Decl) -> Result<Option<String>> {
         typecheck::check_decl(&mut self.tenv, d)?;
         match d {
-            Decl::TypeAlias(n, t) => Ok(Some(format!("type {n} = {}", pretty::ty(t)))),
+            Decl::TypeAlias(n, t) => Ok(Some(format!(
+                "type {} = {}",
+                pretty::name(n),
+                pretty::ty(t)
+            ))),
             Decl::Let(n, t, body) => {
                 let v = eval::eval(&self.venv, body)?;
                 self.venv.bind(n, v);
-                Ok(Some(format!("{n} : {}", pretty::ty(t))))
+                Ok(Some(format!("{} : {}", pretty::name(n), pretty::ty(t))))
             }
             Decl::Eval(e) => {
                 let v = eval::eval(&self.venv, e)?;

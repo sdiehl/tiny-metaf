@@ -2,20 +2,21 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::errors::{Error, Result};
-use crate::syntax::{BinOp, Name, Tm};
+use crate::pretty;
+use crate::syntax::{BinOp, Tm, TmName};
 
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
     Bool(bool),
-    Closure(Env, Name, Rc<Tm>),
+    Closure(Env, TmName, Rc<Tm>),
     TClosure(Env, Rc<Tm>),
-    FixMarker(Env, Name, Rc<Tm>),
+    FixMarker(Env, TmName, Rc<Tm>),
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Env {
-    vals: HashMap<Name, Rc<Value>>,
+    vals: HashMap<TmName, Rc<Value>>,
 }
 
 impl Env {
@@ -24,18 +25,23 @@ impl Env {
         Self::default()
     }
 
-    pub fn bind(&mut self, n: &Name, v: Value) {
+    pub fn bind(&mut self, n: &TmName, v: Value) {
         self.vals.insert(n.clone(), Rc::new(v));
     }
 
-    fn get(&self, n: &Name) -> Option<Rc<Value>> {
+    fn get(&self, n: &TmName) -> Option<Rc<Value>> {
         self.vals.get(n).cloned()
     }
 }
 
-fn lookup(env: &Env, x: &Name) -> Result<Value> {
+fn lookup(env: &Env, x: &TmName) -> Result<Value> {
     env.get(x).map_or_else(
-        || Err(Error::Runtime(format!("unbound variable: {x}"))),
+        || {
+            Err(Error::Runtime(format!(
+                "unbound variable: {}",
+                pretty::name(x)
+            )))
+        },
         |v| match &*v {
             Value::FixMarker(env_cap, n, body) => {
                 let mut e = env_cap.clone();
@@ -55,8 +61,14 @@ pub fn eval(env: &Env, tm: &Tm) -> Result<Value> {
         Tm::Int(i) => Ok(Value::Int(*i)),
         Tm::Bool(b) => Ok(Value::Bool(*b)),
         Tm::Var(x) => lookup(env, x),
-        Tm::Lam(x, _, body) => Ok(Value::Closure(env.clone(), x.clone(), body.clone())),
-        Tm::TLam(_, _, body) => Ok(Value::TClosure(env.clone(), body.clone())),
+        Tm::Lam(b) => {
+            let ((x, _), body) = b.unbind_ref();
+            Ok(Value::Closure(env.clone(), x, body))
+        }
+        Tm::TLam(b) => {
+            let (_, body) = b.unbind_ref();
+            Ok(Value::TClosure(env.clone(), body))
+        }
         Tm::App(f, x) => {
             let fv = eval(env, f)?;
             let xv = eval(env, x)?;
@@ -69,11 +81,12 @@ pub fn eval(env: &Env, tm: &Tm) -> Result<Value> {
                 _ => Err(Error::Runtime("expected type abstraction".into())),
             }
         }
-        Tm::Let(x, _, v, b) => {
+        Tm::Let(v, b) => {
             let vv = eval(env, v)?;
+            let ((x, _), body) = b.unbind_ref();
             let mut env2 = env.clone();
-            env2.bind(x, vv);
-            eval(&env2, b)
+            env2.bind(&x, vv);
+            eval(&env2, &body)
         }
         Tm::If(c, t, e) => match eval(env, c)? {
             Value::Bool(true) => eval(env, t),
@@ -85,10 +98,11 @@ pub fn eval(env: &Env, tm: &Tm) -> Result<Value> {
             let rv = eval(env, r)?;
             apply_bin(*op, &lv, &rv)
         }
-        Tm::Fix(n, _, body) => {
+        Tm::Fix(b) => {
+            let ((n, _), body) = b.unbind_ref();
             let mut env2 = env.clone();
-            env2.bind(n, Value::FixMarker(env.clone(), n.clone(), body.clone()));
-            eval(&env2, body)
+            env2.bind(&n, Value::FixMarker(env.clone(), n.clone(), body.clone()));
+            eval(&env2, &body)
         }
         Tm::Ann(e, _) => eval(env, e),
     }

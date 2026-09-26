@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/alias_scope.f
+---
+error: type error: type mismatch: expected forall T. T -> Int, got forall T. T -> T

@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/shadow.f
+---
+k : forall a. a -> forall a. a -> a
+k2 : forall a. a -> forall b. b -> a
+1

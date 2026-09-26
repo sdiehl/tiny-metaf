@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: out
+input_file: tests/cases/shadow_unsound.f
+---
+error: type error: type mismatch: expected forall a. a -> forall b. b -> b, got forall a. a -> forall b. b -> a

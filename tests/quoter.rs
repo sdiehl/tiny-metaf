@@ -1,12 +1,11 @@
-use std::rc::Rc;
-
 use tiny_fself::driver::Session;
 use tiny_fself::eval::Value;
 use tiny_fself::parse;
 use tiny_fself::pretty;
 use tiny_fself::quote;
-use tiny_fself::syntax::{name, Kind, Tm, Ty};
+use tiny_fself::syntax::{ty_name, Tm, Ty};
 use tiny_fself::typecheck;
+use unbound::prelude::*;
 
 const PREAMBLE: &str = r"
 type Op    = lam (F : * -> *). lam (a : (* -> *) -> *). F (a F);
@@ -36,117 +35,99 @@ fn loaded() -> Session {
 }
 
 fn exp_ty(pre_univ: Ty) -> Ty {
-    Ty::App(Rc::new(Ty::Var(name("Exp"))), Rc::new(pre_univ))
+    Ty::app(Ty::Var(ty_name("Exp")), pre_univ)
 }
 
-/// Quote, type-check against `Exp [[ty]]`, then evaluate
-/// `unquote [pre_rep_universe(ty)] qtm <tail-applied to extra args>`.
-fn round_trip(tm: &Tm, ty: &Ty, tail: &[Either]) -> Value {
+/// Quote `tm : ty`, check the result against `Exp [[ty]]`, and return it.
+fn quoted(s: &mut Session, tm: &str, ty: &str) -> (Tm, Ty) {
+    let tm = parse::parse_expr(tm).expect("term parses");
+    let ty = parse::parse_type(ty).expect("type parses");
+    let qtm = quote::quote(&s.tenv, &tm, &ty).expect("quote");
+    let univ = quote::pre_rep_universe(&ty);
+    typecheck::check(&mut s.tenv, &qtm, &exp_ty(univ.clone())).expect("type-checks");
+    (qtm, univ)
+}
+
+/// Quote, then evaluate `unquote [[[ty]]] q` followed by `tail`.
+fn round_trip(tm: &str, ty: &str, tail: &str) -> Value {
     let mut s = loaded();
-    let qtm = quote::quote(&s.tenv, tm, ty).expect("quote");
-    let expected = exp_ty(quote::pre_rep_universe(ty));
-    typecheck::check(&mut s.tenv, &qtm, &expected).expect("type-checks");
-    let unq = Tm::TApp(
-        Rc::new(Tm::Var(name("unquote"))),
-        Rc::new(quote::pre_rep_universe(ty)),
+    let (qtm, univ) = quoted(&mut s, tm, ty);
+    let src = format!(
+        "unquote [{}] ({}) {tail}",
+        pretty::ty(&univ),
+        pretty::tm(&qtm)
     );
-    let mut e = Tm::App(Rc::new(unq), Rc::new(qtm));
-    for step in tail {
-        e = match step {
-            Either::T(t) => Tm::TApp(Rc::new(e), Rc::new(t.clone())),
-            Either::V(v) => Tm::App(Rc::new(e), Rc::new(v.clone())),
-        };
-    }
-    let (_t, v) = s.eval_expr(&Rc::new(e)).expect("eval");
-    v
+    let e = parse::parse_expr(&src).expect("reparses");
+    s.eval_expr(&e.into()).expect("eval").1
 }
 
-enum Either {
-    T(Ty),
-    V(Tm),
+fn int(v: &Value) -> i64 {
+    match v {
+        Value::Int(i) => *i,
+        v => panic!("expected int, got {}", pretty::value(v)),
+    }
 }
 
 #[test]
 fn polymorphic_identity_round_trips() {
-    let id = Tm::TLam(
-        name("a"),
-        Rc::new(Kind::Star),
-        Rc::new(Tm::Lam(
-            name("x"),
-            Rc::new(Ty::Var(name("a"))),
-            Rc::new(Tm::Var(name("x"))),
-        )),
-    );
-    let ty = Ty::Forall(
-        name("a"),
-        Rc::new(Kind::Star),
-        Rc::new(Ty::Arr(
-            Rc::new(Ty::Var(name("a"))),
-            Rc::new(Ty::Var(name("a"))),
-        )),
-    );
-    let v = round_trip(&id, &ty, &[Either::T(Ty::Int), Either::V(Tm::Int(42))]);
-    assert!(matches!(v, Value::Int(42)), "got {}", pretty::value(&v));
+    let v = round_trip(r"/\a. \(x : a). x", "forall a. a -> a", "[Int] 42");
+    assert_eq!(int(&v), 42);
 }
 
 #[test]
 fn pure_lambda_round_trips() {
-    let lam = Tm::Lam(name("x"), Rc::new(Ty::Int), Rc::new(Tm::Var(name("x"))));
-    let ty = Ty::Arr(Rc::new(Ty::Int), Rc::new(Ty::Int));
-    let v = round_trip(&lam, &ty, &[Either::V(Tm::Int(7))]);
-    assert!(matches!(v, Value::Int(7)), "got {}", pretty::value(&v));
+    assert_eq!(int(&round_trip(r"\(x : Int). x", "Int -> Int", "7")), 7);
 }
 
 #[test]
 fn tapp_round_trips() {
-    // (qid [Int]) at Int -> Int
-    let qid = Tm::TLam(
-        name("a"),
-        Rc::new(Kind::Star),
-        Rc::new(Tm::Lam(
-            name("x"),
-            Rc::new(Ty::Var(name("a"))),
-            Rc::new(Tm::Var(name("x"))),
-        )),
+    let v = round_trip(r"(/\a. \(x : a). x) [Int]", "Int -> Int", "123");
+    assert_eq!(int(&v), 123);
+}
+
+#[test]
+fn nested_type_binders_do_not_capture() {
+    let v = round_trip(
+        r"/\b. /\a. \(x : b). x",
+        "forall b. forall a. b -> b",
+        "[Int] [Bool] 5",
     );
-    let qid_int = Tm::TApp(Rc::new(qid), Rc::new(Ty::Int));
-    let ty = Ty::Arr(Rc::new(Ty::Int), Rc::new(Ty::Int));
-    let v = round_trip(&qid_int, &ty, &[Either::V(Tm::Int(123))]);
-    assert!(matches!(v, Value::Int(123)), "got {}", pretty::value(&v));
+    assert_eq!(int(&v), 5);
+}
+
+#[test]
+fn binders_named_like_constructors_do_not_capture() {
+    let v = round_trip(r"\(abs : Int). \(y : Int). y", "Int -> Int -> Int", "1 2");
+    assert_eq!(int(&v), 2);
+}
+
+#[test]
+fn type_variable_named_f_does_not_capture() {
+    let v = round_trip(r"/\F. \(x : F). x", "forall F. F -> F", "[Int] 9");
+    assert_eq!(int(&v), 9);
 }
 
 #[test]
 fn pretty_printed_quote_reparses() {
-    let id = Tm::TLam(
-        name("a"),
-        Rc::new(Kind::Star),
-        Rc::new(Tm::Lam(
-            name("x"),
-            Rc::new(Ty::Var(name("a"))),
-            Rc::new(Tm::Var(name("x"))),
-        )),
-    );
-    let ty = Ty::Forall(
-        name("a"),
-        Rc::new(Kind::Star),
-        Rc::new(Ty::Arr(
-            Rc::new(Ty::Var(name("a"))),
-            Rc::new(Ty::Var(name("a"))),
-        )),
-    );
     let mut s = loaded();
-    let qtm = quote::quote(&s.tenv, &id, &ty).expect("quote");
+    let ty = "forall b. forall a. b -> a -> b";
+    let (qtm, univ) = quoted(&mut s, r"/\b. /\a. \(x : b). \(y : a). x", ty);
     let reparsed = parse::parse_expr(&pretty::tm(&qtm)).expect("reparse");
-    typecheck::check(
-        &mut s.tenv,
-        &reparsed,
-        &exp_ty(quote::pre_rep_universe(&ty)),
-    )
-    .expect("ok");
+    assert!(reparsed.aeq(&qtm));
+    typecheck::check(&mut s.tenv, &reparsed, &exp_ty(univ)).expect("ok");
 }
 
 #[test]
 fn literal_is_rejected() {
     let s = loaded();
     assert!(quote::quote(&s.tenv, &Tm::Int(5), &Ty::Int).is_err());
+}
+
+#[test]
+fn free_variable_is_rejected() {
+    let s = loaded();
+    let tm = parse::parse_expr("unquote").unwrap();
+    let ty = parse::parse_type("forall (a : (* -> *) -> *). Exp a -> Op Id a").unwrap();
+    let err = quote::quote(&s.tenv, &tm, &ty).unwrap_err().to_string();
+    assert!(err.contains("free variable"), "{err}");
 }
