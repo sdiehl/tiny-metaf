@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::errors::{Error, Result};
-use crate::pretty;
 use crate::syntax::{BinOp, Tm, TmName};
 
 #[derive(Debug, Clone)]
@@ -36,12 +35,7 @@ impl Env {
 
 fn lookup(env: &Env, x: &TmName) -> Result<Value> {
     env.get(x).map_or_else(
-        || {
-            Err(Error::Runtime(format!(
-                "unbound variable: {}",
-                pretty::name(x)
-            )))
-        },
+        || Err(Error::Runtime(format!("unbound variable: {x}"))),
         |v| match &*v {
             Value::FixMarker(env_cap, n, body) => {
                 let mut e = env_cap.clone();

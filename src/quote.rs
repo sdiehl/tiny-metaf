@@ -8,9 +8,8 @@
 use unbound::prelude::*;
 
 use crate::errors::{Error, Result};
-use crate::pretty;
-use crate::syntax::{ty_name, Kind, Tm, TmName, Ty, TyName};
-use crate::typecheck::{self, instantiate, nf};
+use crate::syntax::{Kind, Tm, TmName, Ty, TyName};
+use crate::typecheck::{self, nf};
 
 fn star_to_star() -> Kind {
     Kind::arr(Kind::Star, Kind::Star)
@@ -63,7 +62,6 @@ struct Quoter {
     app: TmName,
     tabs: TmName,
     tapp: TmName,
-    bound: Vec<TmName>,
 }
 
 /// Encode closed `tm` of source type `ty` into its deep representation.
@@ -73,6 +71,12 @@ struct Quoter {
 pub fn quote(env: &typecheck::Env, tm: &Tm, ty: &Ty) -> Result<Tm> {
     let mut env = env.clone();
     typecheck::check(&mut env, tm, ty)?;
+    // A well-typed term's free names are either type aliases or variables.
+    if let Some(n) = tm.fv().iter().find(|n| !env.is_alias(n)) {
+        return Err(Error::Type(format!(
+            "quote: free variable {n}, only closed terms can be quoted"
+        )));
+    }
     let ty = nf(&env, ty);
     let mut q = Quoter {
         env,
@@ -81,7 +85,6 @@ pub fn quote(env: &typecheck::Env, tm: &Tm, ty: &Ty) -> Result<Tm> {
         app: s2n("app"),
         tabs: s2n("tabs"),
         tapp: s2n("tapp"),
-        bound: Vec::new(),
     };
     let inner = q.go(tm, &ty)?;
     let cons = [
@@ -91,7 +94,7 @@ pub fn quote(env: &typecheck::Env, tm: &Tm, ty: &Ty) -> Result<Tm> {
         (q.tapp, "TApp"),
     ];
     let body = cons.into_iter().rev().fold(inner, |acc, (x, t)| {
-        Tm::lam(x, at(&ty_name(t), Ty::Var(q.f.clone())), acc)
+        Tm::lam(x, at(&Name::global(t), Ty::Var(q.f.clone())), acc)
     });
     Ok(Tm::tlam(q.f, star_to_star(), body))
 }
@@ -108,11 +111,7 @@ impl Quoter {
 
     fn go(&mut self, tm: &Tm, ty: &Ty) -> Result<Tm> {
         match tm {
-            Tm::Var(n) if self.bound.contains(n) => Ok(Tm::Var(n.clone())),
-            Tm::Var(n) => Err(Error::Type(format!(
-                "quote: free variable {}, only closed terms can be quoted",
-                pretty::name(n)
-            ))),
+            Tm::Var(_) => Ok(tm.clone()),
             Tm::Lam(b) => {
                 let ((x, dom), body) = b.unbind_ref();
                 let Ty::Arr(_, cod) = ty else {
@@ -120,7 +119,6 @@ impl Quoter {
                 };
                 let dom = nf(&self.env, &dom);
                 self.env.bind_term(&x, dom.clone().into());
-                self.bound.push(x.clone());
                 let qbody = self.go(&body, cod)?;
                 let (dom, cod) = (self.pre(&dom), self.pre(cod));
                 let inner = Tm::lam(x, at(&self.f, dom.clone()), qbody);
@@ -147,7 +145,7 @@ impl Quoter {
                 let Ty::Forall(tb) = ty else {
                     return Err(Error::Type("quote: type-lambda needs forall type".into()));
                 };
-                let body_ty = instantiate(tb, &Ty::Var(a.clone()));
+                let body_ty = tb.instantiate(&Ty::Var(a.clone()));
                 self.env.bind_tyvar(&a, k.clone());
                 let qbody = self.go(&body, &body_ty)?;
                 let a_pre = Ty::forall(a.clone(), k.clone(), at(&self.f, self.pre(&body_ty)));

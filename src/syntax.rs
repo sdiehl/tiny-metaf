@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
@@ -8,35 +6,8 @@ use unbound::prelude::*;
 pub type TyName = Name<Ty>;
 pub type TmName = Name<Tm>;
 
-thread_local! {
-    static TY_NAMES: RefCell<HashMap<String, TyName>> = RefCell::default();
-    static TM_NAMES: RefCell<HashMap<String, TmName>> = RefCell::default();
-}
-
-/// The name for a source spelling. Terms are built bottom-up and each binder
-/// closes over exactly the occurrences left free in its body, so one name per
-/// spelling yields lexical scope.
-#[must_use]
-pub fn ty_name(s: &str) -> TyName {
-    TY_NAMES.with(|m| {
-        m.borrow_mut()
-            .entry(s.into())
-            .or_insert_with(|| s2n(s))
-            .clone()
-    })
-}
-
-#[must_use]
-pub fn tm_name(s: &str) -> TmName {
-    TM_NAMES.with(|m| {
-        m.borrow_mut()
-            .entry(s.into())
-            .or_insert_with(|| s2n(s))
-            .clone()
-    })
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Alpha)]
+#[derive(Debug, Clone, PartialEq, Eq, Alpha, Subst)]
+#[subst(_)]
 pub enum Kind {
     Star,
     Arr(Rc<Self>, Rc<Self>),
@@ -46,16 +17,6 @@ impl Kind {
     #[must_use]
     pub fn arr(a: Self, b: Self) -> Self {
         Self::Arr(Rc::new(a), Rc::new(b))
-    }
-}
-
-impl Subst<Ty> for Kind {
-    fn is_var(&self) -> Option<SubstName<Ty>> {
-        None
-    }
-
-    fn subst(&self, _: &TyName, _: &Ty) -> Self {
-        self.clone()
     }
 }
 

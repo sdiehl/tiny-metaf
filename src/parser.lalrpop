@@ -1,8 +1,10 @@
 use std::rc::Rc;
 
+use unbound::Name;
+
 use crate::lexer::{LexicalError, Token};
 use crate::syntax::{
-    fold_foralls, fold_lams, fold_tlams, fold_tylams, tm_name, ty_name, BinOp, Decl, Kind, Tm,
+    fold_foralls, fold_lams, fold_tlams, fold_tylams, BinOp, Decl, Kind, Tm,
     TmName, Ty, TyName,
 };
 
@@ -13,16 +15,16 @@ pub Program: Vec<Decl> = {
 };
 
 Decl: Decl = {
-    "type" <n:"IDENT"> "=" <t:Type> ";" => Decl::TypeAlias(ty_name(&n), Rc::new(t)),
+    "type" <n:"IDENT"> "=" <t:Type> ";" => Decl::TypeAlias(Name::global(&n), Rc::new(t)),
     "let" <n:"IDENT"> ":" <ty:Type> "=" <body:Expr> ";" => {
-        Decl::Let(tm_name(&n), Rc::new(ty), Rc::new(body))
+        Decl::Let(Name::global(&n), Rc::new(ty), Rc::new(body))
     },
     "eval" <e:Expr> ";" => Decl::Eval(Rc::new(e)),
 };
 
 pub Expr: Tm = {
     "let" <n:"IDENT"> <ann:LetAnn?> "=" <v:Expr> "in" <b:Expr> => {
-        Tm::let_(tm_name(&n), ann, v, b)
+        Tm::let_(Name::global(&n), ann, v, b)
     },
     "if" <c:Expr> "then" <t:Expr> "else" <e:Expr> => {
         Tm::If(Rc::new(c), Rc::new(t), Rc::new(e))
@@ -30,7 +32,7 @@ pub Expr: Tm = {
     "\\" <ps:LamParams> "." <body:Expr> => fold_lams(ps, body),
     "/\\" <ps:TyParams> "." <body:Expr> => fold_tlams(ps, body),
     "fix" <n:"IDENT"> ":" <t:Type> "." <body:Expr> => {
-        Tm::fix(tm_name(&n), t, body)
+        Tm::fix(Name::global(&n), t, body)
     },
     ExprAnn,
 };
@@ -49,8 +51,8 @@ LamParams: Vec<(TmName, Ty)> = {
 };
 
 LamParam: (TmName, Ty) = {
-    "(" <n:"IDENT"> ":" <t:Type> ")" => (tm_name(&n), t),
-    <n:"IDENT"> ":" <t:AtomType> => (tm_name(&n), t),
+    "(" <n:"IDENT"> ":" <t:Type> ")" => (Name::global(&n), t),
+    <n:"IDENT"> ":" <t:AtomType> => (Name::global(&n), t),
 };
 
 TyParams: Vec<(TyName, Kind)> = {
@@ -63,8 +65,8 @@ TyParams: Vec<(TyName, Kind)> = {
 };
 
 TyParam: (TyName, Kind) = {
-    <n:"IDENT"> => (ty_name(&n), Kind::Star),
-    "(" <n:"IDENT"> ":" <k:Kind> ")" => (ty_name(&n), k),
+    <n:"IDENT"> => (Name::global(&n), Kind::Star),
+    "(" <n:"IDENT"> ":" <k:Kind> ")" => (Name::global(&n), k),
 };
 
 pub Kind: Kind = {
@@ -119,7 +121,7 @@ Atom: Tm = {
     <n:"NUM"> => Tm::Int(n),
     "true" => Tm::Bool(true),
     "false" => Tm::Bool(false),
-    <s:"IDENT"> => Tm::Var(tm_name(&s)),
+    <s:"IDENT"> => Tm::Var(Name::global(&s)),
     "(" <e:Expr> ")" => e,
 };
 
@@ -138,7 +140,7 @@ AppType: Ty = {
 AtomType: Ty = {
     "Int" => Ty::Int,
     "Bool" => Ty::Bool,
-    <s:"IDENT"> => Ty::Var(ty_name(&s)),
+    <s:"IDENT"> => Ty::Var(Name::global(&s)),
     "(" <t:Type> ")" => t,
 };
 

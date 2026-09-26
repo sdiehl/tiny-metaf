@@ -5,7 +5,7 @@ use unbound::prelude::*;
 
 use crate::errors::{Error, Result};
 use crate::pretty;
-use crate::syntax::{BinOp, Decl, Kind, Tm, TmName, Ty, TyBind, TyName};
+use crate::syntax::{BinOp, Decl, Kind, Tm, TmName, Ty, TyName};
 
 /// Binders are opened with globally fresh names, so scopes never shadow and
 /// entries can be added without ever being removed.
@@ -33,13 +33,11 @@ impl Env {
     pub fn bind_alias(&mut self, n: &TyName, t: Rc<Ty>) {
         self.aliases.insert(n.clone(), t);
     }
-}
 
-/// `body[t/a]` for a type binder.
-#[must_use]
-pub fn instantiate(b: &TyBind, t: &Ty) -> Ty {
-    let ((a, _), body) = b.unbind_ref();
-    body.as_ref().subst(&a, t)
+    #[must_use]
+    pub fn is_alias(&self, n: &AnyName) -> bool {
+        self.aliases.keys().any(|a| a == n)
+    }
 }
 
 #[must_use]
@@ -50,7 +48,7 @@ pub fn whnf(env: &Env, t: &Ty) -> Ty {
             .get(n)
             .map_or_else(|| t.clone(), |a| whnf(env, a)),
         Ty::App(f, x) => match whnf(env, f) {
-            Ty::Lam(b) => whnf(env, &instantiate(&b, x)),
+            Ty::Lam(b) => whnf(env, &b.instantiate(&**x)),
             other => Ty::App(Rc::new(other), x.clone()),
         },
         _ => t.clone(),
@@ -85,9 +83,11 @@ fn kind_of(env: &mut Env, ty: &Ty) -> Result<Kind> {
             if let Some(k) = env.kinds.get(n) {
                 return Ok(k.clone());
             }
-            let alias = env.aliases.get(n).cloned().ok_or_else(|| {
-                Error::Type(format!("unbound type variable: {}", pretty::name(n)))
-            })?;
+            let alias = env
+                .aliases
+                .get(n)
+                .cloned()
+                .ok_or_else(|| Error::Type(format!("unbound type variable: {n}")))?;
             kind_of(env, &alias)
         }
         Ty::Arr(a, b) => {
@@ -157,7 +157,7 @@ pub fn infer(env: &mut Env, tm: &Tm) -> Result<Ty> {
             .tys
             .get(n)
             .map(|t| (**t).clone())
-            .ok_or_else(|| Error::Type(format!("unbound variable: {}", pretty::name(n)))),
+            .ok_or_else(|| Error::Type(format!("unbound variable: {n}"))),
         Tm::Lam(b) => {
             let ((x, ty), body) = b.unbind_ref();
             well_formed(env, &ty)?;
@@ -189,7 +189,7 @@ pub fn infer(env: &mut Env, tm: &Tm) -> Result<Ty> {
             match whnf(env, &ft) {
                 Ty::Forall(b) => {
                     check_kind(env, t, &b.pattern().1)?;
-                    Ok(instantiate(&b, t))
+                    Ok(Rc::unwrap_or_clone(b.instantiate(&**t)))
                 }
                 other => Err(Error::Type(format!(
                     "expected forall, got {}",

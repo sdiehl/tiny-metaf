@@ -5,12 +5,6 @@ use unbound::prelude::*;
 use crate::eval::Value;
 use crate::syntax::{BinOp, Kind, Tm, Ty};
 
-/// The source spelling of a name.
-#[must_use]
-pub fn name<T>(n: &Name<T>) -> &str {
-    n.string().unwrap_or("_")
-}
-
 #[must_use]
 pub fn kind(k: &Kind) -> String {
     let mut s = String::new();
@@ -43,61 +37,21 @@ pub fn tm(t: &Tm) -> String {
     p.out
 }
 
-/// Every name in scope gets a distinct spelling, suffixing where two would
-/// collide, so the output reparses to the same term.
 struct Printer {
     out: String,
-    scope: Vec<(usize, String)>,
+    names: NameScope,
 }
 
 impl Printer {
     fn new(free: &[AnyName]) -> Self {
-        let mut p = Self {
+        Self {
             out: String::new(),
-            scope: Vec::new(),
-        };
-        for n in free {
-            let d = p.pick(n.string(), free);
-            p.scope.push((n.index(), d));
+            names: NameScope::new(free),
         }
-        p
-    }
-
-    /// A spelling based on `base` that no name free in the binder's body
-    /// already uses.
-    fn pick(&self, base: &str, body_fv: &[AnyName]) -> String {
-        let taken = |s: &str| {
-            self.scope
-                .iter()
-                .any(|(i, d)| d == s && body_fv.iter().any(|n| n.index() == *i))
-        };
-        let mut s = base.to_string();
-        let mut i = 0;
-        while taken(&s) {
-            i += 1;
-            s = format!("{base}{i}");
-        }
-        s
-    }
-
-    fn enter<T>(&mut self, n: &Name<T>, d: String) {
-        self.scope.push((n.index().unwrap_or(usize::MAX), d));
-    }
-
-    fn bind<T>(&mut self, n: &Name<T>, body_fv: &[AnyName]) -> String {
-        let d = self.pick(name(n), body_fv);
-        self.enter(n, d.clone());
-        d
     }
 
     fn var<T>(&mut self, n: &Name<T>) {
-        let s = self
-            .scope
-            .iter()
-            .rev()
-            .find(|(i, _)| Some(*i) == n.index())
-            .map_or_else(|| name(n), |(_, d)| d.as_str());
-        self.out.push_str(s);
+        self.out.push_str(self.names.get(n));
     }
 
     fn binder(&mut self, n: &str, k: &Kind) {
@@ -131,12 +85,12 @@ impl Printer {
                 };
                 let ((a, k), body) = bnd.unbind_ref();
                 self.paren(prec, 0, |p| {
-                    let d = p.bind(&a, &body.fv());
+                    let d = p.names.bind(&a, &body.fv());
                     let _ = write!(p.out, "{kw} ");
                     p.binder(&d, &k);
                     p.out.push_str(". ");
                     p.ty(&body, 0);
-                    p.scope.pop();
+                    p.names.pop();
                 });
             }
         }
@@ -152,13 +106,13 @@ impl Printer {
             Tm::Lam(b) => {
                 let ((x, ty), body) = b.unbind_ref();
                 self.paren(prec, 0, |p| {
-                    let d = p.pick(name(&x), &body.fv());
+                    let d = p.names.pick(&x, &body.fv());
                     let _ = write!(p.out, "\\({d} : ");
                     p.ty(&ty, 0);
-                    p.enter(&x, d);
+                    p.names.push(&x, d);
                     p.out.push_str("). ");
                     p.tm(&body, 0);
-                    p.scope.pop();
+                    p.names.pop();
                 });
             }
             Tm::App(f, x) => self.paren(prec, 9, |p| {
@@ -169,12 +123,12 @@ impl Printer {
             Tm::TLam(bnd) => {
                 let ((a, k), body) = bnd.unbind_ref();
                 self.paren(prec, 0, |p| {
-                    let d = p.bind(&a, &body.fv());
+                    let d = p.names.bind(&a, &body.fv());
                     p.out.push_str("/\\");
                     p.binder(&d, &k);
                     p.out.push_str(". ");
                     p.tm(&body, 0);
-                    p.scope.pop();
+                    p.names.pop();
                 });
             }
             Tm::TApp(f, t) => self.paren(prec, 9, |p| {
@@ -186,7 +140,7 @@ impl Printer {
             Tm::Let(v, bnd) => {
                 let ((x, ann), body) = bnd.unbind_ref();
                 self.paren(prec, 0, |p| {
-                    let d = p.pick(name(&x), &body.fv());
+                    let d = p.names.pick(&x, &body.fv());
                     let _ = write!(p.out, "let {d}");
                     if let Some(a) = ann {
                         p.out.push_str(" : ");
@@ -195,9 +149,9 @@ impl Printer {
                     p.out.push_str(" = ");
                     p.tm(v, 0);
                     p.out.push_str(" in ");
-                    p.enter(&x, d);
+                    p.names.push(&x, d);
                     p.tm(&body, 0);
-                    p.scope.pop();
+                    p.names.pop();
                 });
             }
             Tm::If(c, th, el) => self.paren(prec, 0, |p| {
@@ -219,12 +173,12 @@ impl Printer {
             Tm::Fix(b) => {
                 let ((n, ty), body) = b.unbind_ref();
                 self.paren(prec, 0, |p| {
-                    let d = p.bind(&n, &body.fv());
+                    let d = p.names.bind(&n, &body.fv());
                     let _ = write!(p.out, "fix {d} : ");
                     p.ty(&ty, 0);
                     p.out.push_str(". ");
                     p.tm(&body, 0);
-                    p.scope.pop();
+                    p.names.pop();
                 });
             }
             Tm::Ann(e, t) => self.paren(prec, 0, |p| {

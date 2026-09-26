@@ -3,7 +3,7 @@ use tiny_fself::eval::Value;
 use tiny_fself::parse;
 use tiny_fself::pretty;
 use tiny_fself::quote;
-use tiny_fself::syntax::{ty_name, Tm, Ty};
+use tiny_fself::syntax::{Tm, Ty};
 use tiny_fself::typecheck;
 use unbound::prelude::*;
 
@@ -35,7 +35,7 @@ fn loaded() -> Session {
 }
 
 fn exp_ty(pre_univ: Ty) -> Ty {
-    Ty::app(Ty::Var(ty_name("Exp")), pre_univ)
+    Ty::app(Ty::Var(Name::global("Exp")), pre_univ)
 }
 
 /// Quote `tm : ty`, check the result against `Exp [[ty]]`, and return it.
