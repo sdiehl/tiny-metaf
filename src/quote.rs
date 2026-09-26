@@ -175,15 +175,11 @@ impl Quoter {
                     inst,
                 ))
             }
-            Tm::Int(_)
-            | Tm::Bool(_)
-            | Tm::Let(..)
-            | Tm::If(..)
-            | Tm::Bin(..)
-            | Tm::Fix(..)
-            | Tm::Ann(..) => Err(Error::Type(
-                "quote: only pure F-omega (var, lam, app, tlam, tapp) is supported".into(),
-            )),
+            Tm::Int(_) | Tm::Bool(_) | Tm::Let(..) | Tm::If(..) | Tm::Bin(..) | Tm::Ann(..) => {
+                Err(Error::Type(
+                    "quote: only pure F-omega (var, lam, app, tlam, tapp) is supported".into(),
+                ))
+            }
         }
     }
 

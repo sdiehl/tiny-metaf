@@ -31,9 +31,6 @@ pub Expr: Tm = {
     },
     "\\" <ps:LamParams> "." <body:Expr> => fold_lams(ps, body),
     "/\\" <ps:TyParams> "." <body:Expr> => fold_tlams(ps, body),
-    "fix" <n:"IDENT"> ":" <t:Type> "." <body:Expr> => {
-        Tm::fix(Name::global(&n), t, body)
-    },
     ExprAnn,
 };
 
@@ -161,7 +158,6 @@ extern {
         "Bool" => Token::BoolTy,
         "type" => Token::Type,
         "eval" => Token::Eval,
-        "fix" => Token::Fix,
         "lam" => Token::Lam,
         "->" => Token::Arrow,
         "=" => Token::Eq,

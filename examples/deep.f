@@ -87,15 +87,20 @@ let qidLam : Exp QIdLamPre =
   /\(F : * -> *). \(abs : Abs F). \(app : App F). \(tabs : TAbs F). \(tapp : TApp F).
     abs [Int] [Int] (\(x : F Int). x);
 
--- qidInt encodes (qid [Int]). the head is tapp.
+-- qidInt encodes (/\a. \(x : a). x) [Int]. the head is tapp, and the body of
+-- qid is inlined so the representation stays beta-normal (`:quote` in the repl
+-- prints exactly this).
 type QIdIntPre = lam (F : * -> *). F Int -> F Int;
 
 let qidInt : Exp QIdIntPre =
   /\(F : * -> *). \(abs : Abs F). \(app : App F). \(tabs : TAbs F). \(tapp : TApp F).
     tapp [forall a. F (F a -> F a)]
-         (qid [F] abs app tabs tapp)
-         [F Int -> F Int]
-         (\(g : forall a. F (F a -> F a)). g [Int]);
+      (tabs [forall a. F (F a -> F a)]
+        (/\b. \(f : forall c. F c -> b). \(x : forall a. F (F a -> F a)).
+           f [F Bot -> F Bot] (x [Bot]))
+        (/\a. abs [a] [a] (\(x : F a). x)))
+      [F Int -> F Int]
+      (\(g : forall a. F (F a -> F a)). g [Int]);
 
 -- --------------------------------------------------------------------------
 -- operations
@@ -112,13 +117,14 @@ let unquote : forall (a : (* -> *) -> *). Exp a -> Op Id a =
       (/\b. \(s : Strip Id b). \(x : b). x)
       (/\b. \(x : b). /\c. \(f : b -> c). f x);
 
--- size (F := KNat): count ast nodes, all four constructors weight 1.
+-- size (F := KNat): count ast nodes, types excluded. every constructor and
+-- every variable weighs 1, so abs feeds its body a 1 for the bound variable.
 type KNat = lam (a : *). Int;
 
 let size : forall (a : (* -> *) -> *). Exp a -> Op KNat a =
   /\(a : (* -> *) -> *). \(e : Exp a).
     e [KNat]
-      (/\b. /\c. \(body : Int -> Int). 1 + body 0)
+      (/\b. /\c. \(body : Int -> Int). 1 + body 1)
       (/\b. /\c. \(f : Int). \(x : Int). 1 + f + x)
       (/\b. \(s : Strip KNat b). \(x : b).
          1 + s [Int] (/\c. \(n : Int). n) x)

@@ -8,13 +8,16 @@ use crate::driver::Session;
 use crate::errors::{Error, Result};
 use crate::parse;
 use crate::pretty;
+use crate::quote;
 use crate::syntax::ReplItem;
+use crate::typecheck;
 
 const BANNER: &str = "tiny-fself  --  :? for help, :q to quit";
 
 const HELP: &str = "\
 commands:
   :t <expr>     show type of expression
+  :quote <expr> show the deep representation of a closed pure term
   :l <file>     load and run a file
   :q            quit
   :?            this help
@@ -67,6 +70,15 @@ fn handle_cmd(s: &mut Session, cmd: &str) -> Result<()> {
             let e = parse::parse_expr(tail)?;
             let t = s.infer(&e)?;
             println!("{} : {}", pretty::tm(&e), pretty::ty(&t));
+            Ok(())
+        }
+        "quote" => {
+            let e = parse::parse_expr(tail)?;
+            let t = s.infer(&e)?;
+            let t = typecheck::nf(&s.tenv, &t);
+            let q = quote::quote(&s.tenv, &e, &t)?;
+            let univ = quote::pre_rep_universe(&t);
+            println!("{} : Exp ({})", pretty::tm(&q), pretty::ty(&univ));
             Ok(())
         }
         "l" | "load" => load_file(s, Path::new(tail)),

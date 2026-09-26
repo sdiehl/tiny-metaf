@@ -4,6 +4,7 @@ pub mod driver;
 pub mod errors;
 pub mod eval;
 pub mod lexer;
+pub mod norm;
 pub mod parse;
 pub mod pretty;
 pub mod quote;

@@ -7,7 +7,10 @@ use tiny_fself::driver::Session;
 use tiny_fself::repl;
 
 #[derive(Parser)]
-#[command(name = "tiny-fself", about = "System F with a typed self-interpreter")]
+#[command(
+    name = "tiny-fself",
+    about = "Brown & Palsberg's typed self-interpreter for System F-omega"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,

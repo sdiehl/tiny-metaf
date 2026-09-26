@@ -8,7 +8,7 @@ keywords = ["system-f", "type-theory", "self-interpreter"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/sdiehl/tiny-fself"
-description = "System F with a typed self-interpreter"
+description = "Code-golfing Brown & Palsberg's typed meta-circular self-interpreter for System F-omega"
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }

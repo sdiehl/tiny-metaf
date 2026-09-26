@@ -23,6 +23,7 @@ impl Kind {
 pub type TyBind = Bind<(TyName, Kind), Rc<Ty>>;
 
 #[derive(Debug, Clone, Alpha, Subst)]
+#[subst(Self, Tm)]
 pub enum Ty {
     Var(TyName),
     Arr(Rc<Self>, Rc<Self>),
@@ -55,7 +56,8 @@ impl Ty {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Alpha)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Alpha, Subst)]
+#[subst(_)]
 pub enum BinOp {
     Add,
     Sub,
@@ -81,7 +83,8 @@ impl BinOp {
     }
 }
 
-#[derive(Debug, Clone, Alpha)]
+#[derive(Debug, Clone, Alpha, Subst)]
+#[subst(Self, Ty)]
 pub enum Tm {
     Var(TmName),
     Int(i64),
@@ -93,7 +96,6 @@ pub enum Tm {
     Let(Rc<Self>, Bind<(TmName, Option<Rc<Ty>>), Rc<Self>>),
     If(Rc<Self>, Rc<Self>, Rc<Self>),
     Bin(BinOp, Rc<Self>, Rc<Self>),
-    Fix(Bind<(TmName, Rc<Ty>), Rc<Self>>),
     Ann(Rc<Self>, Rc<Ty>),
 }
 
@@ -121,11 +123,6 @@ impl Tm {
     #[must_use]
     pub fn let_(x: TmName, ann: Option<Ty>, v: Self, body: Self) -> Self {
         Self::Let(Rc::new(v), Bind::new((x, ann.map(Rc::new)), Rc::new(body)))
-    }
-
-    #[must_use]
-    pub fn fix(n: TmName, ty: Ty, body: Self) -> Self {
-        Self::Fix(Bind::new((n, Rc::new(ty)), Rc::new(body)))
     }
 }
 

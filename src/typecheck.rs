@@ -225,13 +225,6 @@ pub fn infer(env: &mut Env, tm: &Tm) -> Result<Ty> {
             check(env, r, &arg)?;
             Ok(res)
         }
-        Tm::Fix(b) => {
-            let ((n, ty), body) = b.unbind_ref();
-            well_formed(env, &ty)?;
-            env.bind_term(&n, ty.clone());
-            check(env, &body, &ty)?;
-            Ok((*ty).clone())
-        }
         Tm::Ann(e, t) => {
             well_formed(env, t)?;
             check(env, e, t)?;

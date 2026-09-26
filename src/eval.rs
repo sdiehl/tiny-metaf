@@ -10,7 +10,6 @@ pub enum Value {
     Bool(bool),
     Closure(Env, TmName, Rc<Tm>),
     TClosure(Env, Rc<Tm>),
-    FixMarker(Env, TmName, Rc<Tm>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -34,20 +33,9 @@ impl Env {
 }
 
 fn lookup(env: &Env, x: &TmName) -> Result<Value> {
-    env.get(x).map_or_else(
-        || Err(Error::Runtime(format!("unbound variable: {x}"))),
-        |v| match &*v {
-            Value::FixMarker(env_cap, n, body) => {
-                let mut e = env_cap.clone();
-                e.bind(
-                    n,
-                    Value::FixMarker(env_cap.clone(), n.clone(), body.clone()),
-                );
-                eval(&e, body)
-            }
-            other => Ok(other.clone()),
-        },
-    )
+    env.get(x)
+        .map(|v| (*v).clone())
+        .ok_or_else(|| Error::Runtime(format!("unbound variable: {x}")))
 }
 
 pub fn eval(env: &Env, tm: &Tm) -> Result<Value> {
@@ -91,12 +79,6 @@ pub fn eval(env: &Env, tm: &Tm) -> Result<Value> {
             let lv = eval(env, l)?;
             let rv = eval(env, r)?;
             apply_bin(*op, &lv, &rv)
-        }
-        Tm::Fix(b) => {
-            let ((n, _), body) = b.unbind_ref();
-            let mut env2 = env.clone();
-            env2.bind(&n, Value::FixMarker(env.clone(), n.clone(), body.clone()));
-            eval(&env2, &body)
         }
         Tm::Ann(e, _) => eval(env, e),
     }

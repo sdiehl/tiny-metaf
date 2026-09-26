@@ -170,17 +170,6 @@ impl Printer {
                     p.tm(r, o + 1);
                 });
             }
-            Tm::Fix(b) => {
-                let ((n, ty), body) = b.unbind_ref();
-                self.paren(prec, 0, |p| {
-                    let d = p.names.bind(&n, &body.fv());
-                    let _ = write!(p.out, "fix {d} : ");
-                    p.ty(&ty, 0);
-                    p.out.push_str(". ");
-                    p.tm(&body, 0);
-                    p.names.pop();
-                });
-            }
             Tm::Ann(e, t) => self.paren(prec, 0, |p| {
                 p.tm(e, 1);
                 p.out.push_str(" : ");
@@ -229,6 +218,5 @@ pub fn value(v: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Closure(..) => "<closure>".into(),
         Value::TClosure(..) => "<tclosure>".into(),
-        Value::FixMarker(..) => "<fix>".into(),
     }
 }

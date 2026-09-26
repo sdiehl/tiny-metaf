@@ -29,8 +29,6 @@ pub enum Token {
     Type,
     #[token("eval")]
     Eval,
-    #[token("fix")]
-    Fix,
     #[token("lam")]
     Lam,
 
@@ -96,7 +94,6 @@ impl fmt::Display for Token {
             Self::BoolTy => write!(f, "Bool"),
             Self::Type => write!(f, "type"),
             Self::Eval => write!(f, "eval"),
-            Self::Fix => write!(f, "fix"),
             Self::Lam => write!(f, "lam"),
             Self::Arrow => write!(f, "->"),
             Self::Eq => write!(f, "="),

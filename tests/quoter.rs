@@ -1,5 +1,6 @@
 use tiny_fself::driver::Session;
 use tiny_fself::eval::Value;
+use tiny_fself::norm;
 use tiny_fself::parse;
 use tiny_fself::pretty;
 use tiny_fself::quote;
@@ -18,17 +19,22 @@ type TApp = lam (F : * -> *). forall a. F a -> forall b. (a -> F b) -> F b;
 type Exp = lam (a : (* -> *) -> *).
   forall (F : * -> *). Abs F -> App F -> TAbs F -> TApp F -> Op F a;
 type Id = lam (a : *). a;
-let unquote : forall (a : (* -> *) -> *). Exp a -> Op Id a =
+";
+
+const UNQUOTE: &str = r"
   /\(a : (* -> *) -> *). \(e : Exp a).
     e [Id]
       (/\b. /\c. \(f : b -> c). f)
       (/\b. /\c. \(f : b -> c). \(x : b). f x)
       (/\b. \(s : Strip Id b). \(x : b). x)
-      (/\b. \(x : b). /\c. \(f : b -> c). f x);
+      (/\b. \(x : b). /\c. \(f : b -> c). f x)
 ";
 
 fn loaded() -> Session {
-    let prog = parse::parse_program(PREAMBLE).expect("preamble parses");
+    let src = format!(
+        "{PREAMBLE}let unquote : forall (a : (* -> *) -> *). Exp a -> Op Id a = {UNQUOTE};"
+    );
+    let prog = parse::parse_program(&src).expect("preamble parses");
     let mut s = Session::new();
     s.process_program(&prog).expect("preamble checks");
     s
@@ -130,4 +136,55 @@ fn free_variable_is_rejected() {
     let ty = parse::parse_type("forall (a : (* -> *) -> *). Exp a -> Op Id a").unwrap();
     let err = quote::quote(&s.tenv, &tm, &ty).unwrap_err().to_string();
     assert!(err.contains("free variable"), "{err}");
+}
+
+/// Theorem 7.4: `unquote [[t]] [e] ->* e`, up to equivalence of types. Both
+/// sides are fully normalised, so for a normal `e` this is the exact claim.
+fn unquote_reduces_to_source(tm: &str, ty: &str) {
+    let mut s = loaded();
+    let (qtm, univ) = quoted(&mut s, tm, ty);
+    assert!(norm::is_normal(&qtm), "representation has a redex");
+    let un = parse::parse_expr(UNQUOTE).unwrap();
+    let lhs = norm::norm(&s.tenv, &Tm::app(Tm::tapp(un, univ), qtm));
+    let rhs = norm::norm(&s.tenv, &parse::parse_expr(tm).unwrap());
+    assert!(
+        lhs.aeq(&rhs),
+        "{} vs {}",
+        pretty::tm(&lhs),
+        pretty::tm(&rhs)
+    );
+}
+
+#[test]
+fn theorem_unquote_identity() {
+    unquote_reduces_to_source(r"/\a. \(x : a). x", "forall a. a -> a");
+}
+
+#[test]
+fn theorem_unquote_higher_kind() {
+    unquote_reduces_to_source(
+        r"/\(M : * -> *). /\a. \(x : M a). x",
+        "forall (M : * -> *). forall a. M a -> M a",
+    );
+}
+
+#[test]
+fn theorem_unquote_church_two() {
+    unquote_reduces_to_source(
+        r"/\a. \(s : a -> a). \(z : a). s (s z)",
+        "forall a. (a -> a) -> a -> a",
+    );
+}
+
+#[test]
+fn theorem_unquote_neutral_tapp() {
+    unquote_reduces_to_source(
+        r"\(p : forall a. a -> a). \(y : Int). p [forall b. b -> b] p [Int] y",
+        "(forall a. a -> a) -> Int -> Int",
+    );
+}
+
+#[test]
+fn theorem_unquote_redex_up_to_beta() {
+    unquote_reduces_to_source(r"(/\a. \(x : a). x) [Int]", "Int -> Int");
 }
