@@ -931,16 +931,18 @@ checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "unbound"
-version = "0.2.0"
-source = "git+https://github.com/sdiehl/unbound?rev=3246421#32464210d99fbcb145098d44ec0d61db70ebe034"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25f0b53e066aa06ab5b04367ddb23d249c741f30e10e1cc5e54aa6a00ee93351"
 dependencies = [
  "unbound-derive",
 ]
 
 [[package]]
 name = "unbound-derive"
-version = "0.2.0"
-source = "git+https://github.com/sdiehl/unbound?rev=3246421#32464210d99fbcb145098d44ec0d61db70ebe034"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd3b61f1148553fa1b6797e9425d282b6b83ea21ff2aefde38af9330f63e1bb6"
 dependencies = [
  "proc-macro2",
  "quote",

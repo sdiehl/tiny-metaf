@@ -16,7 +16,7 @@ lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
 logos = "0.16"
 rustyline = "18"
 thiserror = "2.0"
-unbound = { git = "https://github.com/sdiehl/unbound", rev = "3246421" }
+unbound = "0.3.0"
 
 [build-dependencies]
 lalrpop = { version = "0.23.1", features = ["lexer", "unicode"] }
