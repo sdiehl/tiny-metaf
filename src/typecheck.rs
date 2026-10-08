@@ -238,17 +238,15 @@ pub fn check_decl(env: &mut Env, d: &Decl) -> Result<()> {
         Decl::TypeAlias(n, t) => {
             kind_of(env, t)?;
             env.bind_alias(n, t.clone());
-            Ok(())
         }
         Decl::Let(n, t, body) => {
             well_formed(env, t)?;
             check(env, body, t)?;
             env.bind_term(n, t.clone());
-            Ok(())
         }
         Decl::Eval(e) => {
             infer(env, e)?;
-            Ok(())
         }
     }
+    Ok(())
 }
