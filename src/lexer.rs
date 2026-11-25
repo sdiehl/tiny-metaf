@@ -1,9 +1,11 @@
 use std::fmt;
 
-use logos::{skip, Lexer as LogosLexer, Logos};
+use logos::{Lexer as LogosLexer, Logos};
 use thiserror::Error;
 
 #[derive(Logos, Debug, Clone, PartialEq, Eq)]
+#[logos(skip r"[ \t\n\r\f]+")]
+#[logos(skip(r"--[^\n\r]*", allow_greedy = true))]
 pub enum Token {
     #[token("let")]
     Let,
@@ -73,10 +75,6 @@ pub enum Token {
     Num(i64),
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_']*", |lex| lex.slice().to_string())]
     Ident(String),
-
-    #[regex(r"[ \t\n\r\f]+", skip)]
-    #[regex(r"--[^\n\r]*", skip, allow_greedy = true)]
-    Whitespace,
 }
 
 impl fmt::Display for Token {
@@ -115,7 +113,6 @@ impl fmt::Display for Token {
             Self::BigLambda => write!(f, "/\\"),
             Self::Num(n) => write!(f, "{n}"),
             Self::Ident(s) => write!(f, "{s}"),
-            Self::Whitespace => write!(f, "<whitespace>"),
         }
     }
 }
@@ -144,14 +141,11 @@ impl Iterator for Lexer<'_> {
     type Item = Result<(usize, Token, usize), LexicalError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let tok = self.inner.next()?;
-            let span = self.inner.span();
-            return Some(match tok {
-                Ok(Token::Whitespace) => continue,
-                Ok(t) => Ok((span.start, t, span.end)),
-                Err(()) => Err(LexicalError::InvalidToken(span.start)),
-            });
-        }
+        let tok = self.inner.next()?;
+        let span = self.inner.span();
+        Some(match tok {
+            Ok(t) => Ok((span.start, t, span.end)),
+            Err(()) => Err(LexicalError::InvalidToken(span.start)),
+        })
     }
 }
